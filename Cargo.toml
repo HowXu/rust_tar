@@ -1,0 +1,15 @@
+[package]
+name = "qzip"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+
+[lib]
+crate-type = ["staticlib", "cdylib", "lib"]
+name = "qzip"
+path = "src/api/api.rs"
+
+[[bin]]
+name = "qz"
+path = "src/shell/main.rs"
