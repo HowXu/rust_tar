@@ -1,3 +1,8 @@
+// declare mods
+mod shell;
+mod io;
+
+
 use std::fmt::Error;
 
 pub fn main() -> Result<(),Error>{
