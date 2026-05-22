@@ -1,5 +1,6 @@
-
-type Byte = u8;
+pub(super) type Byte = u8;
+pub(super) type IOError = std::io::Error;
+pub(super) type FMTError = std::fmt::Error;
 
 #[repr(C)] // C 不对齐方式
 pub(super) struct CommonHeader{
@@ -18,5 +19,11 @@ pub(super) struct CommonHeader{
     owner_group_name: [Byte;32],
     device_major: [Byte;8],
     device_minor: [Byte;8],
-    filename_prefix: [Byte;155] // what's this ?
+    filename_prefix: [Byte;155], // what's this ?
+    paddings:[Byte;12]
+}
+
+#[test]
+fn test_header_size(){
+    assert_eq!(size_of::<CommonHeader>(),512); // a header must be 512 size or a chunk
 }
