@@ -1,6 +1,13 @@
+use std::path::PathBuf;
+
+
+
 pub(super) type Byte = u8;
 pub(super) type IOError = std::io::Error;
 pub(super) type FMTError = std::fmt::Error;
+
+pub(super) const MAGIC_NUMBER: [Byte;6] = [0x75, 0x73, 0x74, 0x61, 0x72, 0x20]; // "ustar\0"
+pub(super) const MAGIC_VERSION: [Byte;2] = [0x20,0x00]; // " \0"
 
 #[repr(C)] // C 不对齐方式
 pub(super) struct CommonHeader {
@@ -13,7 +20,7 @@ pub(super) struct CommonHeader {
     pub(super) checksum: [Byte; 8],
     pub(super) type_flag: Byte,
     pub(super) type_info: [Byte; 100],
-    pub(super) ustar_indicator: [Byte; 6], // always be ustar\000 Hex is [75, 73, 74, 61, 72, 20]
+    pub(super) ustar_indicator: [Byte; 6], // always be ustar\0 Hex is [75, 73, 74, 61, 72, 20]
     pub(super) ustar_version: [Byte; 2],   // always be 00\0 Hex is [20, 00]
     pub(super) owner_user_name: [Byte; 32],
     pub(super) owner_group_name: [Byte; 32],
@@ -22,6 +29,14 @@ pub(super) struct CommonHeader {
     pub(super) filename_prefix: [Byte; 155], // what's this ?
     pub(super) paddings: [Byte; 12],
 }
+
+pub(super) struct Instance<> {
+    pub(super) path: Box<PathBuf>,
+    pub(super) is_folder: bool,
+    pub(super) file_size: u64,
+    pub(super) seek_from: u64, // 512 * seek from
+}
+
 impl CommonHeader {
     pub(super) fn new() -> Self {
         Self {
@@ -42,6 +57,17 @@ impl CommonHeader {
             device_minor: [0u8; 8],
             filename_prefix: [0u8; 155],
             paddings: [0u8; 12],
+        }
+    }
+}
+
+impl Instance {
+    pub(super) fn new(path: Box<PathBuf>, is_folder: bool, file_size: u64, seek_from: u64) -> Self {
+        Self {
+            path,
+            is_folder,
+            file_size,
+            seek_from,
         }
     }
 }

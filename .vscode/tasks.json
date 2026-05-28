@@ -9,7 +9,10 @@
 				"$rustc"
 			],
 			"group": "test",
-			"label": "Run Test"
+			"label": "Run Test",
+			"env": {
+				"RUST_BACKTRACE":"full"
+			}
 		}
 	]
 }
