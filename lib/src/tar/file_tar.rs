@@ -1,7 +1,6 @@
 use crate::def::*;
 use std::{
     collections::{LinkedList, VecDeque},
-    env,
     fs::{self, File, OpenOptions},
     io::{ErrorKind, Read, Seek, SeekFrom, Write},
     mem,
@@ -13,12 +12,34 @@ use std::{
  *  the parent of output_file must be exist and confirmed by user
  *  input path must be a folder and confirmed by user
  */
-fn file_entar<'f>(input_path: &'f Path, output_file: &'f Path) -> Result<(), IOError> {
+pub fn file_entar<'f>(input_path: &'f Path, output_file: &'f Path) -> Result<(), IOError> {
     // first get the information we need and push to a stack
     // e.g. filesize modifitime and ustar indicators
     let mut headers: Vec<EntarWrapper> = vec![];
     // do not forget the first folder
-    if let Err(e) = process_files_recursively(input_path, input_path, &mut headers) {
+    let father: &Path;
+    if let Some(_father) = input_path.parent() {
+        father = _father;
+    } else {
+        println!("It's a top dir maybe / or other errors");
+        return Err(IOError::other("It's a top dir maybe / or other errors"));
+    }
+
+    if let Ok(rel) = input_path.strip_prefix(father) {
+        if let Ok(meta) = input_path.metadata() {
+            headers.push(EntarWrapper::new(
+                input_path.to_path_buf(),
+                rel.to_path_buf(),
+                true,
+                meta,
+            ));
+        } else {
+            println!("Error get input_file metadata");
+            return Err(IOError::other("Error get input_file metadata"));
+        }
+    }
+
+    if let Err(e) = process_files_recursively(father, input_path, &mut headers) {
         return Err(e);
     }
 
@@ -70,16 +91,23 @@ fn file_entar<'f>(input_path: &'f Path, output_file: &'f Path) -> Result<(), IOE
         }
         // we need last two empty chunks
         let empty_chunk: [Byte; 512] = [0x00u8; 512];
-        tar_file.write(&empty_chunk);
-        tar_file.write(&empty_chunk);
-        tar_file.flush();
+        for _ in 0..2 {
+            if let Err(_) = tar_file.write(&empty_chunk) {
+                println!("Error write two empty chunks");
+                return Err(IOError::other("Error write two empty chunks"));
+            }
+        }
+        if let Err(_) = tar_file.flush() {
+            println!("Error flush tar file");
+            return Err(IOError::other("Error flush tar file"));
+        }
     }
 
     Ok(())
 }
 
 // this should be width first
-fn process_files_recursively<'f>(
+pub fn process_files_recursively<'f>(
     father: &'f Path,
     input_path: &'f Path,
     vec: &mut Vec<EntarWrapper>,
@@ -148,7 +176,7 @@ fn process_files_recursively<'f>(
  *  but who cares ?
  *  No LongLinks, it's just a trick game
  */
-fn file_untar<'f>(input_file: &'f Path, output_path: &'f Path) -> Result<(), IOError> {
+pub fn file_untar<'f>(input_file: &'f Path, output_path: &'f Path) -> Result<(), IOError> {
     // how can i use multiple threads to untar a file?
     let tar_file = File::open(input_file)?; // this is the pointer to the file / or stream
     // do not judge if the file exist, it's work of shell
@@ -308,206 +336,5 @@ fn file_untar<'f>(input_file: &'f Path, output_path: &'f Path) -> Result<(), IOE
         }
     });
 
-    Ok(())
-}
-
-#[test]
-fn test_print_workspace() {
-    // get the cur dir is better
-    println!("current_exe is: {}", env::current_exe().unwrap().display());
-    println!("current_dir is: {}", env::current_dir().unwrap().display());
-}
-
-#[test]
-fn test_file_untar() -> Result<(), IOError> {
-    let cur_path: &Path;
-    let cur_path_str: String;
-    let cur_dir = env::current_dir()?; // cur_dir will be re used
-    if let Some(p) = cur_dir.as_path().to_str() {
-        cur_path_str = String::from(p);
-        cur_path = Path::new(p);
-    } else {
-        return Err(IOError::other("unavalaible cur dir"));
-    }
-
-    println!("cur is {}", cur_path_str);
-
-    let test_files_folder = cur_path.join("tests"); // this is qzip\lib\tests
-    let tmp_folder = cur_path.join("tests").join("tmp"); // this is qzip\lib\tests\tmp
-
-    if !tmp_folder.exists() {
-        fs::create_dir_all(&tmp_folder)?;
-    } // tmp folder
-
-    // do untar in tmp folder
-    // do not give it state
-    let result = file_untar(
-        &test_files_folder.join("folder.tar").as_path(),
-        &tmp_folder.clone().as_path(),
-    );
-
-    assert!(result.is_ok());
-
-    use blake3::Hasher;
-    use std::io::Read;
-
-    let to_do_list = vec![
-        "test_files/中文示例/中文示例.txt",
-        "test_files/bar/apple.txt",
-        "test_files/long.txt",
-        "test_files/banana.txt",
-        "test_files/😁.txt",
-    ];
-    to_do_list.iter().for_each(|s| {
-        let mut test_file = File::open(&test_files_folder.join(s)).unwrap();
-        let mut tmp_file = File::open(&tmp_folder.join(s)).unwrap();
-        let mut hasher_a = Hasher::new();
-        let mut hasher_b = Hasher::new();
-        let mut buf = [0u8; 65536]; // 64KB 块更高效
-
-        loop {
-            if let Ok(n) = test_file.read(&mut buf) {
-                if n == 0 {
-                    break;
-                }
-                hasher_a.update(&buf[..n]);
-            }
-        }
-
-        loop {
-            if let Ok(n) = tmp_file.read(&mut buf) {
-                if n == 0 {
-                    break;
-                }
-                hasher_b.update(&buf[..n]);
-            }
-        }
-        assert!(hasher_a.finalize().as_bytes() == hasher_b.finalize().as_bytes());
-        println!("file hash success: {}", s);
-    });
-
-    // remove all
-    fs::remove_dir_all(tmp_folder)?;
-    Ok(())
-}
-
-#[test]
-fn test_file_entar() -> Result<(), IOError> {
-    let cur_path: &Path;
-    let cur_path_str: String;
-    let cur_dir = env::current_dir()?; // cur_dir will be re used
-    if let Some(p) = cur_dir.as_path().to_str() {
-        cur_path_str = String::from(p);
-        cur_path = Path::new(p);
-    } else {
-        return Err(IOError::other("unavalaible cur dir"));
-    }
-
-    println!("cur is {}", cur_path_str);
-
-    let test_files_folder = cur_path.join("tests"); // this is qzip\lib\tests
-    let tmp_folder = cur_path.join("tests").join("tmp2"); // this is qzip\lib\tests\tmp
-
-    if !tmp_folder.exists() {
-        fs::create_dir_all(&tmp_folder)?;
-    } // tmp folder
-
-    let to_be_tar_folder = test_files_folder.join("test_files"); // this is files to be tar
-    let tar_file = tmp_folder.join("folder.tar");
-
-    // do untar in tmp folder
-    // do not give it state
-    let result = file_entar((&to_be_tar_folder).as_path(), (&tar_file).as_path());
-
-    if let Err(ref e) = result {
-        println!("Error: {}", e);
-    }
-
-    assert!(result.is_ok());
-
-    // remove all
-    fs::remove_dir_all(tmp_folder)?;
-    Ok(())
-}
-
-#[test]
-fn all_in_test() -> Result<(), IOError> {
-    let cur_path: &Path;
-    let cur_path_str: String;
-    let cur_dir = env::current_dir()?; // cur_dir will be re used
-    if let Some(p) = cur_dir.as_path().to_str() {
-        cur_path_str = String::from(p);
-        cur_path = Path::new(p);
-    } else {
-        return Err(IOError::other("unavalaible cur dir"));
-    }
-
-    println!("cur is {}", cur_path_str);
-
-    let test_files_folder = cur_path.join("tests"); // this is qzip\lib\tests
-    let tmp_folder = cur_path.join("tests").join("tmp3"); // this is qzip\lib\tests\tmp
-
-    if !tmp_folder.exists() {
-        fs::create_dir_all(&tmp_folder)?;
-    } // tmp folder
-
-    let to_be_tar_folder = test_files_folder.join("test_files"); // this is files to be tar
-    let tar_file = tmp_folder.join("folder.tar");
-
-    let result_entar = file_entar((&to_be_tar_folder).as_path(), (&tar_file).as_path());
-
-    if let Err(ref e) = result_entar {
-        println!("Error: {}", e);
-    }
-
-    // entar it
-    assert!(result_entar.is_ok());
-
-    // do untar in tmp folder
-    // do not give it state
-    let result = file_untar(tar_file.as_path(), tmp_folder.clone().as_path());
-
-    assert!(result.is_ok());
-
-    use blake3::Hasher;
-    use std::io::Read;
-
-    let to_do_list = vec![
-        "中文示例/中文示例.txt",
-        "bar/apple.txt",
-        "long.txt",
-        "banana.txt",
-        "😁.txt",
-    ];
-    to_do_list.iter().for_each(|s| {
-        let mut test_file = File::open(&to_be_tar_folder.join(s)).unwrap();
-        let mut tmp_file = File::open(&tmp_folder.join(s)).unwrap();
-        let mut hasher_a = Hasher::new();
-        let mut hasher_b = Hasher::new();
-        let mut buf = [0u8; 65536]; // 64KB 块更高效
-
-        loop {
-            if let Ok(n) = test_file.read(&mut buf) {
-                if n == 0 {
-                    break;
-                }
-                hasher_a.update(&buf[..n]);
-            }
-        }
-
-        loop {
-            if let Ok(n) = tmp_file.read(&mut buf) {
-                if n == 0 {
-                    break;
-                }
-                hasher_b.update(&buf[..n]);
-            }
-        }
-        assert!(hasher_a.finalize().as_bytes() == hasher_b.finalize().as_bytes());
-        println!("file hash success: {}", s);
-    });
-
-    // remove all
-    fs::remove_dir_all(tmp_folder)?;
     Ok(())
 }

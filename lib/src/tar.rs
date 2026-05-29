@@ -1,3 +1,2 @@
-// declare childs
-mod file_tar;
-mod byte_tar;
+pub mod file_tar;
+pub mod byte_tar;

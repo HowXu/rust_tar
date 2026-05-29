@@ -1,8 +1,7 @@
-use std::fmt::format;
-use std::fs::{File, Metadata, Permissions};
+use std::fs::Metadata;
 use std::mem;
 use std::time::UNIX_EPOCH;
-use std::{path::PathBuf, time::SystemTime};
+use std::path::PathBuf;
 
 pub(super) type Byte = u8;
 pub(super) type IOError = std::io::Error;

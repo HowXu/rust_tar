@@ -1,4 +1,3 @@
-// declare mods
-mod tar;
-mod err;
-mod def;
+pub mod tar;
+pub mod err;
+pub mod def;
