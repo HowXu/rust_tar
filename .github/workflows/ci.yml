@@ -21,7 +21,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: cargo test
-        run: cargo test --package qzip-lib
+        run: cargo test --package rust_tar-lib
 
   fmt:
     name: Rustfmt
@@ -35,7 +35,7 @@ jobs:
 
       - name: Check formatting
         run: |
-          rustfmt --check --edition 2021 bin/src/*.rs lib/src/**/*.rs || exit 1
+          rustfmt --check --edition 2021 bin/src/*.rs lib/src/**/*.rs
 
   clippy:
     name: Clippy
@@ -48,4 +48,4 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Clippy
-        run: cargo clippy --package qzip-lib -- -D warnings
+        run: cargo clippy --package rust_tar-lib -- -D warnings
