@@ -32,7 +32,7 @@ cargo run --bin rust_tar -- untar output.tar ./output
 ## 测试
 
 ```bash
-cargo test --package rust_tar-lib
+cargo test --package rust_tar_lib
 ```
 
 测试会进行 entar → untar 循环，验证解压后的文件与原文件 hash 一致。

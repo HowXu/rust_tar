@@ -2,7 +2,7 @@ use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
 use blake3::Hasher;
-use rust_tar-lib::tar::file_tar::{file_entar, file_untar};
+use rust_tar_lib::tar::file_tar::{file_entar, file_untar};
 
 fn hash_file(path: &Path) -> [u8; 32] {
     let mut file = File::open(path).unwrap();

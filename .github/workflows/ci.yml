@@ -21,7 +21,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: cargo test
-        run: cargo test --package rust_tar-lib
+        run: cargo test --package rust_tar_lib
 
   fmt:
     name: Rustfmt
@@ -48,4 +48,4 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Clippy
-        run: cargo clippy --package rust_tar-lib -- -D warnings
+        run: cargo clippy --package rust_tar_lib -- -D warnings
