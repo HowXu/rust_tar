@@ -1,15 +1,141 @@
 use crate::def::*;
 use std::{
-    collections::LinkedList,
+    collections::{LinkedList, VecDeque},
     env,
-    fmt::Error,
     fs::{self, File, OpenOptions},
     io::{ErrorKind, Read, Seek, SeekFrom, Write},
     mem,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
+/**
+ *  still there's no judge
+ *  the parent of output_file must be exist and confirmed by user
+ *  input path must be a folder and confirmed by user
+ */
 fn file_entar<'f>(input_path: &'f Path, output_file: &'f Path) -> Result<(), IOError> {
+    // first get the information we need and push to a stack
+    // e.g. filesize modifitime and ustar indicators
+    let mut headers: Vec<EntarWrapper> = vec![];
+    // do not forget the first folder
+    if let Err(e) = process_files_recursively(input_path, input_path, &mut headers) {
+        return Err(e);
+    }
+
+    let _tar_file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(output_file);
+
+    if let Ok(mut tar_file) = _tar_file {
+        for header in headers {
+            // 先拿文件
+
+            let is_folder = header.is_folder;
+            let size = header.file_size;
+            let pointer = header.file_pointer.clone();
+            // write header first
+            let head_buffer: [Byte; 512] = unsafe { mem::transmute(header.as_header()) };
+            if let Err(_) = tar_file.write(&head_buffer) {
+                return Err(IOError::other("write header to tar file failed!"));
+            }
+
+            // write file content then
+            if !is_folder {
+                if let Ok(mut f) = File::open(pointer.as_path()) {
+                    let bf_size = 512 as u64;
+                    let mut writed = 0;
+
+                    let mut content_buffer = vec![0u8; bf_size as usize];
+                    while writed < size {
+                        if let Ok(_) = f.read(&mut content_buffer) {
+                            if let Ok(wd) = tar_file.write(&content_buffer) {
+                                writed += wd as u64;
+                                content_buffer = vec![0u8; bf_size as usize];
+                            } else {
+                                println!("Error write tar file");
+                                return Err(IOError::other("Error write tar file"));
+                            }
+                        } else {
+                            println!("Error read source file");
+                            return Err(IOError::other("Error read source file"));
+                        }
+                    }
+                } else {
+                    println!("Error open the to be writed file");
+                    return Err(IOError::other("Error open the to be writed file"));
+                }
+            }
+        }
+        // we need last two empty chunks
+        let empty_chunk: [Byte; 512] = [0x00u8; 512];
+        tar_file.write(&empty_chunk);
+        tar_file.write(&empty_chunk);
+        tar_file.flush();
+    }
+
+    Ok(())
+}
+
+// this should be width first
+fn process_files_recursively<'f>(
+    father: &'f Path,
+    input_path: &'f Path,
+    vec: &mut Vec<EntarWrapper>,
+) -> Result<(), IOError> {
+    let mut dirs: VecDeque<Box<PathBuf>> = VecDeque::new();
+    for entry in fs::read_dir(input_path)? {
+        let e = entry?;
+        let p = e.path();
+
+        // 其实这里rel可以是string
+        if let Ok(rel) = p.strip_prefix(father) {
+            if p.is_file() {
+                let f: File;
+                if let Ok(_f) = File::open(p.as_path()) {
+                    f = _f;
+                } else {
+                    println!("open dir {}", (&p).display());
+                    panic!("can't open this file now");
+                }
+                if let Ok(meta) = f.metadata() {
+                    vec.push(EntarWrapper::new(
+                        p.to_path_buf(),
+                        rel.to_path_buf(),
+                        false,
+                        meta,
+                    ));
+                } else {
+                    println!("meta get {}", (&p).display());
+                    panic!("can't get this file metadata");
+                }
+            } else if p.is_dir() {
+                if let Ok(meta) = e.metadata() {
+                    vec.push(EntarWrapper::new(
+                        p.to_path_buf(),
+                        rel.to_path_buf(),
+                        true,
+                        meta,
+                    ));
+                    dirs.push_back(Box::new(p.as_path().to_path_buf()));
+                } else {
+                    println!("meta get {}", (&p).display());
+                    panic!("can't get this file metadata");
+                }
+            }
+        } else {
+            println!("caculate related dir failed");
+            return Err(IOError::other("caculate related dir failed"));
+        }
+    }
+
+    for dir in dirs {
+        if let Err(_e) = process_files_recursively(father, dir.as_path(), vec) {
+            panic!("process_files_recursively failed !");
+        }
+    }
+
     Ok(())
 }
 
@@ -85,13 +211,16 @@ fn file_untar<'f>(input_file: &'f Path, output_path: &'f Path) -> Result<(), IOE
                 let maybe_a_dir = output_path.join(&path);
                 chunk_index += 1;
                 println!("Get a path: {}", maybe_a_dir.to_str().unwrap());
-                if path.ends_with("/") {
+                if header.type_flag == 0x35 {
                     // it's almost must
-                    infos.push_back(Instance::new(Box::new(maybe_a_dir), true, 0, 0));
+                    infos.push_back(UntarInstance::new(Box::new(maybe_a_dir), true, 0, 0));
                 } else {
                     // caculate the offset
-                    let offset = u64::div_ceil(file_size, 512);
-                    infos.push_back(Instance::new(
+                    let offset = (file_size + 511) / 512;
+                    // magic do is plus 511 and / 512 向上取整 equals u64::div_ceil
+                    // but this is more magic doesn't it ?
+                    // both two passed tests
+                    infos.push_back(UntarInstance::new(
                         Box::new(maybe_a_dir),
                         false,
                         file_size,
@@ -164,8 +293,8 @@ fn file_untar<'f>(input_file: &'f Path, output_path: &'f Path) -> Result<(), IOE
                             println!("failed to read tar file");
                         }
                         // flush
-                        if let Err(_) = (&tmp).flush(){
-                            println!("failed to flush file: {}",path_str);
+                        if let Err(_) = (&tmp).flush() {
+                            println!("failed to flush file: {}", path_str);
                         }
                     } else {
                         println!("failed to set file seek: {}", path_str);
@@ -237,25 +366,145 @@ fn test_file_untar() -> Result<(), IOError> {
         let mut buf = [0u8; 65536]; // 64KB 块更高效
 
         loop {
-            if let Ok(n) = test_file.read(&mut buf){
+            if let Ok(n) = test_file.read(&mut buf) {
                 if n == 0 {
-                break;
+                    break;
+                }
+                hasher_a.update(&buf[..n]);
             }
-            hasher_a.update(&buf[..n]);
-            }
-            
         }
 
-        loop{
-            if let Ok(n) = tmp_file.read(&mut buf){
+        loop {
+            if let Ok(n) = tmp_file.read(&mut buf) {
                 if n == 0 {
-                break;
-            }
-            hasher_b.update(&buf[..n]);
+                    break;
+                }
+                hasher_b.update(&buf[..n]);
             }
         }
-        assert!(hasher_a.finalize().as_bytes() ==  hasher_b.finalize().as_bytes());
-        println!("file hash success: {}",s);
+        assert!(hasher_a.finalize().as_bytes() == hasher_b.finalize().as_bytes());
+        println!("file hash success: {}", s);
+    });
+
+    // remove all
+    fs::remove_dir_all(tmp_folder)?;
+    Ok(())
+}
+
+#[test]
+fn test_file_entar() -> Result<(), IOError> {
+    let cur_path: &Path;
+    let cur_path_str: String;
+    let cur_dir = env::current_dir()?; // cur_dir will be re used
+    if let Some(p) = cur_dir.as_path().to_str() {
+        cur_path_str = String::from(p);
+        cur_path = Path::new(p);
+    } else {
+        return Err(IOError::other("unavalaible cur dir"));
+    }
+
+    println!("cur is {}", cur_path_str);
+
+    let test_files_folder = cur_path.join("tests"); // this is qzip\lib\tests
+    let tmp_folder = cur_path.join("tests").join("tmp2"); // this is qzip\lib\tests\tmp
+
+    if !tmp_folder.exists() {
+        fs::create_dir_all(&tmp_folder)?;
+    } // tmp folder
+
+    let to_be_tar_folder = test_files_folder.join("test_files"); // this is files to be tar
+    let tar_file = tmp_folder.join("folder.tar");
+
+    // do untar in tmp folder
+    // do not give it state
+    let result = file_entar((&to_be_tar_folder).as_path(), (&tar_file).as_path());
+
+    if let Err(ref e) = result {
+        println!("Error: {}", e);
+    }
+
+    assert!(result.is_ok());
+
+    // remove all
+    fs::remove_dir_all(tmp_folder)?;
+    Ok(())
+}
+
+#[test]
+fn all_in_test() -> Result<(), IOError> {
+    let cur_path: &Path;
+    let cur_path_str: String;
+    let cur_dir = env::current_dir()?; // cur_dir will be re used
+    if let Some(p) = cur_dir.as_path().to_str() {
+        cur_path_str = String::from(p);
+        cur_path = Path::new(p);
+    } else {
+        return Err(IOError::other("unavalaible cur dir"));
+    }
+
+    println!("cur is {}", cur_path_str);
+
+    let test_files_folder = cur_path.join("tests"); // this is qzip\lib\tests
+    let tmp_folder = cur_path.join("tests").join("tmp3"); // this is qzip\lib\tests\tmp
+
+    if !tmp_folder.exists() {
+        fs::create_dir_all(&tmp_folder)?;
+    } // tmp folder
+
+    let to_be_tar_folder = test_files_folder.join("test_files"); // this is files to be tar
+    let tar_file = tmp_folder.join("folder.tar");
+
+    let result_entar = file_entar((&to_be_tar_folder).as_path(), (&tar_file).as_path());
+
+    if let Err(ref e) = result_entar {
+        println!("Error: {}", e);
+    }
+
+    // entar it
+    assert!(result_entar.is_ok());
+
+    // do untar in tmp folder
+    // do not give it state
+    let result = file_untar(tar_file.as_path(), tmp_folder.clone().as_path());
+
+    assert!(result.is_ok());
+
+    use blake3::Hasher;
+    use std::io::Read;
+
+    let to_do_list = vec![
+        "中文示例/中文示例.txt",
+        "bar/apple.txt",
+        "long.txt",
+        "banana.txt",
+        "😁.txt",
+    ];
+    to_do_list.iter().for_each(|s| {
+        let mut test_file = File::open(&to_be_tar_folder.join(s)).unwrap();
+        let mut tmp_file = File::open(&tmp_folder.join(s)).unwrap();
+        let mut hasher_a = Hasher::new();
+        let mut hasher_b = Hasher::new();
+        let mut buf = [0u8; 65536]; // 64KB 块更高效
+
+        loop {
+            if let Ok(n) = test_file.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                hasher_a.update(&buf[..n]);
+            }
+        }
+
+        loop {
+            if let Ok(n) = tmp_file.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                hasher_b.update(&buf[..n]);
+            }
+        }
+        assert!(hasher_a.finalize().as_bytes() == hasher_b.finalize().as_bytes());
+        println!("file hash success: {}", s);
     });
 
     // remove all
