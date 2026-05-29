@@ -1,4 +1,4 @@
-# qzip
+# rust tar
 
 Pure Rust 实现 tar 格式的打包与解包。
 
