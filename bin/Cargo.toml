@@ -4,4 +4,4 @@ version = "0.0.1"
 edition = "2021"
 
 [dependencies]
-qzip-lib = { path = "../lib" }
+rust_tar-lib = { path = "../lib" }

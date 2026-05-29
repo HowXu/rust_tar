@@ -1,6 +1,6 @@
 # rust tar
 
-Pure Rust 实现 tar 格式的打包与解包。
+pure rust 实现 tar 格式的打包与解包。
 
 ## 功能
 
@@ -22,17 +22,17 @@ file_untar(input_file: &Path, output_path: &Path)
 ```bash
 # 打包文件夹
 # 将 tests/test_files 文件夹打包为 output.tar
-cargo run --bin qzip -- entar tests/test_files output.tar
+cargo run --bin rust_tar -- entar tests/test_files output.tar
 
 # 解包 tar 文件
 # 将 output.tar 解压到 ./output 目录
-cargo run --bin qzip -- untar output.tar ./output
+cargo run --bin rust_tar -- untar output.tar ./output
 ```
 
 ## 测试
 
 ```bash
-cargo test --package qzip-lib
+cargo test --package rust_tar-lib
 ```
 
 测试会进行 entar → untar 循环，验证解压后的文件与原文件 hash 一致。
@@ -40,7 +40,7 @@ cargo test --package qzip-lib
 ## 项目结构
 
 ```
-qzip/
+rust_tar/
 ├── bin/              # 可执行入口
 │   └── src/main.rs
 ├── lib/              # 核心库

@@ -168,10 +168,10 @@ pub fn process_files_recursively<'f>(
 }
 
 /**
- *  the path to the file like qzip\lib\tests\folder.tar
- *  the path to untar the file like qzip\lib\tests\tmp. it's always mean under the folder
- *  so the result will be qzip\lib\tests\tmp\"WHAT under folder.tar"
- *  in this folder.tar, it will be qzip\lib\tests\tmp\test_files
+ *  the path to the file like rust_tar\lib\tests\folder.tar
+ *  the path to untar the file like rust_tar\lib\tests\tmp. it's always mean under the folder
+ *  so the result will be rust_tar\lib\tests\tmp\"WHAT under folder.tar"
+ *  in this folder.tar, it will be rust_tar\lib\tests\tmp\test_files
  *  so the default value will be ./ if output_path do not offer
  *  but who cares ?
  *  No LongLinks, it's just a trick game
