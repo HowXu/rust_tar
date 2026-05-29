@@ -1,5 +1,5 @@
 [package]
-name = "rust_tar_lib"
+name = "rust_tar-lib"
 version = "0.0.1"
 edition = "2021"
 
